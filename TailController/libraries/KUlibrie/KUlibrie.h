@@ -151,7 +151,7 @@ class KUlibrie {
         float f_gyr = 40;                                           
 
         // --- FILTER OBJECT ---
-        LongitudinalEKF ekf;
+        LongitudinalEKF filter;
         
         // Matrices for the EKF
         Matrix<4,4> Q = {1e-5, 0, 0, 0, 

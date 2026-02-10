@@ -13,7 +13,8 @@ KUlibrie::KUlibrie(float *u, float *w, float *q, float *theta,
         controlService("1102"), controlChar("2102"),
         actionService("1103"), actionChar("2103"),
         referenceService("1104"), referenceChar("2104"),
-ekf(Q, R, f_acc, f_gyr, 
+        
+        filter(Q, R, f_acc, f_gyr, 
             u, w, q, theta, 
             &ax_filt, &az_filt, &gy_filt, 
             0, 0, 0),        
@@ -242,39 +243,22 @@ void KUlibrie::staticAction(uint16_t conn_handle, BLECharacteristic* chr, uint8_
 
 
 // --------------------------------------------------------
-// Function that interprets the given reference orientation
+// Function that interprets HEX( 0000-0099)
 // --------------------------------------------------------
 void KUlibrie::reference(uint16_t conn_handle, BLECharacteristic* chr, uint8_t* data, uint16_t len) {
-    /*
-    This function is called when there is a change on the "reference" characteristics (by the "staticReference" function (see later))
-
-    Inputs:
-        - conn_handle       uint16_t                Connection handler
-        - chr               BLECharacteristic*      The id of the bluetooth characteristic that changed
-        - data              uint8_t*                The data currently on the characteristic
-        - len               uint16_t                Length of the data vector
-    */
     
-    // The reference characteristic should consist of two bytes
-    referenceData.bytes[0] = data[0];
-    referenceData.bytes[1] = data[1];
+    // 1. Read just the first byte (0-255)
+    uint8_t value = data[0];
 
-    // Transform the reference value (2 bytes) to a uint16 number
-    uint16_t value = referenceData.value[0];
+    // 2. Clamp input to 100 max (just in case you type 101+)
+    if (value > 100) value = 100;
 
-    // Two limit bluetooth trafic, only one characteristic is used to set the three references.
-    // Therefore, the range decides on which reference is given:
-    if (value >= 1000) {
-        // This means a yaw reference is given
-        (*_ref_yaw_rate = (value-1000)/10 - 180)*d2r;
-    } else if (value > 500) {
-        // This means a pitch reference is given
-        *_ref_pitch = ((value - 500)/10 - 20)*d2r;
-    } else {
-        // This means a roll reference is given
-        *_ref_roll = (value/10 - 20)*d2r;
-    }
+    // 3. Map 0-100 to 0.0-3.7 Volts
+    // Formula: (Value / 100.0) * 3.7
+    float desired_voltage = ((float)value / 100.0) * 3.7;
 
+    // 4. Set the voltage
+    *_ref_pitch = desired_voltage;
 }
 
 // -------------------------------------------------------------------------
@@ -298,26 +282,25 @@ void KUlibrie::staticReference(uint16_t conn_handle, BLECharacteristic* chr, uin
 // Function that updates the attitude estimation
 // ---------------------------------------------
 void KUlibrie::update_filter(float dt) {
-    /*
-    This function updates the attitude estimation
-    */
-
-    // Read the current IMU measurements
+    // 1. Read Raw Sensors
     ax = imu.readFloatAccelX();
     ay = imu.readFloatAccelY();
     az = imu.readFloatAccelZ();
 
     gx = imu.readFloatGyroX();
-    gy = imu.readFloatGyroY();
+    gy = imu.readFloatGyroY(); // Pitch Rate
     gz = imu.readFloatGyroZ();
 
-    // Execute the prediction step of the Kalman filter
-    filter.predict(gx, gy, gz, dt, calibrate);
+    // 2. Predict Step (Model)
+    // Uses Voltage (*_VI0) and Servo Angle (*_servo_angle converted to radians)
+    float servo_rad = (*_servo_angle) * d2r;
+    filter.predict(*_VI0, servo_rad, dt);
 
-    // Execute the update step of the Kalman filter
-    filter.update(ax, ay, az, calibrate);
+    // 3. Update Step (Correction)
+    // Uses Ax, Az, and Gy (Pitch Rate)
+    // 'calibrate' flag tells the filter if it should just collect data or filter it
+    filter.update(ax, az, gy, calibrate);
 }
-
 // ---------------------------------------------------------
 // Function that fits a linear regression through given data
 // ---------------------------------------------------------
@@ -422,7 +405,7 @@ void KUlibrie::send_telemetry(unsigned long t) {
     Inputs:
         - t         unsigned long       Number of milliseconds sinds last boot
     */
-    
+
     // Increase the number of passed timesteps
     count_timesteps_telemetry += 1;
     
@@ -444,9 +427,9 @@ void KUlibrie::send_telemetry(unsigned long t) {
         telemetryData.value[16*count_period_telemetry + 10] = gy_filt*r2d;
         telemetryData.value[16*count_period_telemetry + 11] = gz_filt*r2d;
         
-        telemetryData.value[16*count_period_telemetry + 12] = *_roll*r2d;
-        telemetryData.value[16*count_period_telemetry + 13] = *_pitch*r2d;
-        telemetryData.value[16*count_period_telemetry + 14] = *_yaw_rate*r2d;
+        telemetryData.value[16*count_period_telemetry + 12] = *_u;
+        telemetryData.value[16*count_period_telemetry + 13] = *_theta * r2d; // Convert to degrees
+        telemetryData.value[16*count_period_telemetry + 14] = *_w;
         
         telemetryData.value[16*count_period_telemetry + 15] = (float)(t - start_control)/1000;
         
@@ -482,10 +465,10 @@ void KUlibrie::send_control(unsigned long t) {
     // This data is send with a frequency (about) equal to the refreshrate of the Matlab app
     if (count_timesteps_control > PERIOD_APP / PERIOD_CONTROLLER / NB_POINTS_PER_SEND) {
         // Convert the controller data to bytes
-        controlData.value[5*count_period_control] = *_VI0;
-        controlData.value[5*count_period_control + 1] = *_V0;
-        controlData.value[5*count_period_control + 2] = *_dV;
-        controlData.value[5*count_period_control + 3] = *_ds;
+        controlData.value[5*count_period_control]     = *_VI0;
+        controlData.value[5*count_period_control + 1] = 0; // V0 (Unused)
+        controlData.value[5*count_period_control + 2] = 0; // dV (Unused)
+        controlData.value[5*count_period_control + 3] = *_servo_angle; // Using ds slot for servo
         controlData.value[5*count_period_control + 4] = (float)(t - start_control)/1000;
 
         count_period_control += 1;
@@ -508,99 +491,53 @@ void KUlibrie::send_control(unsigned long t) {
 // These functions return the filtered IMU data
 // --------------------------------------------
 float KUlibrie::readFloatAccelX() {
-    /*
-    This function returns the filtered accelerometer data in the x-direction
-    */
     return ax_filt;
 }
 
 float KUlibrie::readFloatAccelY() {
-    /*
-    This function returns the filtered accelerometer data in the y-direction
-    */
     return ay_filt;
 }
 
 float KUlibrie::readFloatAccelZ() {
-    /*
-    This function returns the filtered accelerometer data in the z-direction
-    */
     return az_filt;
 }
 
 float KUlibrie::readFloatGyroX() {
-    /*
-    This function returns the filtered gyroscope data in the x-direction
-    */
     return gx_filt;
 }
 
 float KUlibrie::readFloatGyroY() {
-    /*
-    This function returns the filtered gyroscope data in the y-direction
-    */
-    return gy_filt;
+    return gy_filt; // Note: This now contains the filtered pitch rate from LongitudinalEKF
 }
 
 float KUlibrie::readFloatGyroZ() {
-    /*
-    This function returns the filtered gyroscope data in the z-direction
-    */
     return gz_filt;
 }
 
-// These functions were an attempt to reset the attitude estimator, but they do not work properly
-// {
-void KUlibrie::set_roll(float roll) {
-    *_roll = roll;
+// --------------------------------------------------------------------------------
+// Legacy Functions (Kept for compatibility, but emptied to prevent crashes)
+// The LongitudinalEKF does not support manual resetting of individual axes
+// and does not use the old _roll/_pitch pointers.
+// --------------------------------------------------------------------------------
 
-    if (*_roll == 0) {
-        filter.reset_ax();
-        filter.reset_ay();
-        filter.reset_az();
-    } else if (*_roll > 0) {
-        filter.reset_ax();
-        filter.reset_ay(-1);
-        filter.reset_az();
-    } else {
-        filter.reset_ax();
-        filter.reset_ay(1);
-        filter.reset_az();
-    }
-    
+void KUlibrie::set_roll(float roll) {
+    // Function disabled for Longitudinal Model to prevent NullPointer crash
 }
 
 void KUlibrie::set_pitch(float pitch) {
-    *_pitch = pitch;
-
-    if (*_pitch == 0) {
-        filter.reset_ax();
-        filter.reset_ay();
-        filter.reset_az();
-    } else if (*_pitch > 0) {
-        filter.reset_ax(1);
-        filter.reset_ay();
-        filter.reset_az();
-    } else {
-        filter.reset_ax(-1);
-        filter.reset_ay();
-        filter.reset_az();
-    }
+    // Function disabled for Longitudinal Model to prevent NullPointer crash
+    // If you need to reset pitch, you would ideally add a method to LongitudinalEKF
+    // e.g., filter.set_state(u, w, q, pitch);
 }
 
 void KUlibrie::set_ax_filter(float ax) {
-    filter.reset_ax(ax);
-    filter.reset_ay(0);
-    filter.reset_az(0);
+    // Disabled: Filter handles this internally
 }
+
 void KUlibrie::set_ay_filter(float ay) {
-    filter.reset_ax(0);
-    filter.reset_ay(ay);
-    filter.reset_az(0);
+    // Disabled
 }
+
 void KUlibrie::set_az_filter(float az) {
-    filter.reset_ax(0);
-    filter.reset_ay(0);
-    filter.reset_az(az);
+    // Disabled
 }
-// }
