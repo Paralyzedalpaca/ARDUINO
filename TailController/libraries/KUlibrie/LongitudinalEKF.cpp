@@ -15,9 +15,9 @@ LongitudinalEKF::LongitudinalEKF(Matrix<4,4> Q_in, Matrix<3,3> R_in,
                                  float *ax_filt, float *az_filt, float *q_filt,
                                  float ax_bias, float az_bias, float q_bias)
     : Q(Q_in), R(R_in),
-      ax_filter(2, f_acc, 4e-3, 0), az_filter(2, f_acc, 4e-3, 0,-1),
+      ax_filter(2, f_acc, 4e-3, 0), az_filter(2, f_acc, 4e-3, 0, -1),
       q_filter(2, f_gyr, 4e-3, 0) 
-      // fixed intial value -1 in az_filter is required bc if on ground -1g
+      // az_filter init to -1g (assuming flat on ground)
 {
     // Link State Pointers
     _u = u; _w = w; _q = q; _theta = theta;
@@ -38,20 +38,15 @@ LongitudinalEKF::LongitudinalEKF(Matrix<4,4> Q_in, Matrix<3,3> R_in,
          0, 0, 0.1, 0,
          0, 0, 0, 0.1};
 }
+
 // ---------------------------------------------------------------------------
 // Function that copies the calibration settings to this instance of the class
 // ---------------------------------------------------------------------------
 void LongitudinalEKF::set_calibration(Matrix<5,2> calibration, Matrix<3> gyro_biasses) {
-    /*
-    This function sets the calibration settings in this instance of the extendedKalmanFilter class.
-
-    Inputs:
-        - calibration           5x2 matrix          Accelerometer settings (should actually be 3x2)
-        - gyro_biasses          3d vector           Gyroscope biasses
-    */
     _calibration = calibration;
     _gyro_biasses = gyro_biasses;
 }
+
 // ------------------------------------------
 // Prediction Step (Physics Model)
 // ------------------------------------------
@@ -93,34 +88,30 @@ void LongitudinalEKF::predict(float V_IO, float servo_angle, float dt) {
 // ----------------------------------------------------
 // Update Step (Calibrate -> Filter -> Correct Model)
 // ----------------------------------------------------
-void LongitudinalEKF::update(float ax, float az, float gy, bool calibrating) {
-    // Filter the accelerometer measurements
+void LongitudinalEKF::update(float ax, float az, float q_raw, bool calibrating) {
+    // 1. Filter Measurements
     ax_filter.update(ax);
     az_filter.update(az);
-    // Filter the gyroscope data
-    gy_filter.update(gy);
+    q_filter.update(q_raw); // Use q_filter, not gy_filter
 
-    // If the drone is calibrating, the raw filtered data should be used, otherwise, 
-    // the measurements should be transformed using the calibration settings
+    // 2. Apply Calibration
     if (calibrating) {
         *_ax_filt = ax_filter.get_filtered();
         *_az_filt = az_filter.get_filtered();
-        *_gy_filt = gy_filter.get_filtered();
+        *_q_filt_val = q_filter.get_filtered();
     } else {
-        *_ax_filt = ax_filter.get_filtered()*_calibration(0, 0) + _calibration(0, 1);
-        *_az_filt = az_filter.get_filtered()*_calibration(2, 0) + _calibration(2, 1);
-        // Note important that gyro_biasses(2) is still gy!!!
-        *_gy_filt = (gy_filter.get_filtered() - _gyro_biasses(2))*d2r;
+        *_ax_filt = ax_filter.get_filtered() * _calibration(0, 0) + _calibration(0, 1);
+        *_az_filt = az_filter.get_filtered() * _calibration(2, 0) + _calibration(2, 1);
+        
+        // !!!! Need to watch out _gyro_biasses if 1x3 => must be _gyro_biasses(2)!!
+        *_q_filt_val = (q_filter.get_filtered() - _gyro_biasses(1)) * d2r;
     }
 
-
-    // 4. EKF Innovation (Measurement - Prediction)
+    // 3. EKF Innovation (Measurement - Prediction)
     float u = *_u; 
     float w = *_w; 
     float q = *_q;
 
-    // Prediction: What should the accelerometer read given our state?
-    // Accel measures Specific Force (Forces/mass), NOT including gravity directly.
     float pred_ax = (Xu*u + Xw*w + Xq*q) / mass; 
     float pred_az = (Zu*u + Zw*w + Zq*q) / mass;
     float pred_q  = q;
@@ -129,12 +120,12 @@ void LongitudinalEKF::update(float ax, float az, float gy, bool calibrating) {
     Matrix<3> z_pred = {pred_ax, pred_az, pred_q};
     Matrix<3> y = z_meas - z_pred; 
 
-    // 5. Jacobian C (Measurement Matrix)
+    // 4. Jacobian C (Measurement Matrix)
     C(0,0) = Xu/mass; C(0,1) = Xw/mass; C(0,2) = Xq/mass; C(0,3) = 0;
     C(1,0) = Zu/mass; C(1,1) = Zw/mass; C(1,2) = Zq/mass; C(1,3) = 0;
     C(2,0) = 0;       C(2,1) = 0;       C(2,2) = 1;       C(2,3) = 0;
 
-    // 6. Correction
+    // 5. Correction
     Matrix<3,3> S = C * P * (~C) + R;
     K = P * (~C) * Inverse(S);
     
