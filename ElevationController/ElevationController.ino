@@ -5,7 +5,7 @@
 
 
 //-------------------------------------------------
-#include <Filters.h> // Include the Filter library
+#include <filters.h> // Include the Filter library
 
 // Create a low-pass filter object for pitch
 Filter control_filter(2, 3, 4e-3, 0); 
@@ -134,7 +134,7 @@ float pitch_error_i=0;
 
 bool started = false;
 // KUlibrie object to control the hardware settings, bluetooth communication, ...
-KUlibrie kulibrie(&roll, &pitch, &yaw_rate, &VI0, &V0, &dV, &ds, &ref_roll, &pitch_reference, &ref_yaw_rate,&servo_angle_deg);
+KUlibrie kulibrie(&roll, &pitch, &yaw_rate, &VI0, &V0, &dV, &ds, &ref_roll, &pitch_reference, &ref_yaw_rate);
 
 // PID controllers
 AutoPID roll_control(&roll, &ref_roll, &dV, DV_MIN, DV_MAX, Kp_r, Ki_r, Kd_r);
@@ -265,7 +265,11 @@ void loop() {
     //-------------------------------------
 
 
-    Serial.println(servo_angle_deg);
+    Serial.print("Pitch angle: "); 
+    Serial.println(pitch);         
+    Serial.print(" Servo_angle: "); 
+    Serial.println(servo_angle_deg);      
+    
     // Set the desired voltages to the motors of the KUlibrie
     
     if ((time_new<time_start+end_controller)&&(time_new>time_start+start_controller)){
@@ -550,9 +554,3 @@ void move_servo(){
     myServo.write((int)servo_angle_deg); // Set the servo angle based on the pitch value
     // Update timestep
 }
-
-
-
-
-
-

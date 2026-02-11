@@ -56,6 +56,8 @@ union unionDataReference {
 using namespace Adafruit_LittleFS_Namespace;
 using namespace BLA; // Added this to ensure Matrix<> types are found
 
+#include "LongitudinalEKF.h"
+
 class KUlibrie {
     public:
         // Contructor
@@ -150,8 +152,6 @@ class KUlibrie {
         float f_acc = 1;                                            
         float f_gyr = 40;                                           
 
-        // --- FILTER OBJECT ---
-        LongitudinalEKF filter;
         
         // Matrices for the EKF
         Matrix<4,4> Q = {1e-5, 0, 0, 0, 
@@ -162,6 +162,9 @@ class KUlibrie {
         Matrix<3,3> R = {1e-2, 0, 0, 
                          0, 1e-2, 0, 
                          0, 0, 1e-3};
+
+        // --- FILTER OBJECT --- Important it is after it!
+        LongitudinalEKF filter;
 
         // Calibration Settings
         Matrix<5,2> calibration = {1, 1, 1, 1, 1, 0, 0, 0, 0, 0};   
