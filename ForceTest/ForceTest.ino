@@ -111,7 +111,7 @@ void loop() {
 //  Serial.println(kulibrie.readIMU());
   if (kulibrie.control) {
     // Run this loop only when the drone is flying
-    Serial.println(pitch);
+    //Serial.println(pitch);
     // Update timestep
     time_new = millis();
     dt = (time_new - time_old)/1000.0;
@@ -131,6 +131,7 @@ void loop() {
     // yaw_control.run();
     // print applied voltage
     Serial.println(VI0);
+
      // Set the desired voltages to the motors of the KUlibrie 
     set_voltage();
   } else if (kulibrie.calibrate) {
@@ -140,6 +141,9 @@ void loop() {
     // If the drone is idle, the motors should not be powered
     analogWrite(kulibrie.PWM_A, 0);
     analogWrite(kulibrie.PWM_B, 0);
+    /// AND RESET THE CYCLE COUNTER ///
+    // Reset cycle counter so it ramps up again next time it starts
+    cycle_counter = 0;
   }
 
   // Send telemetry and controller information when asked
@@ -179,9 +183,10 @@ void set_voltage() {
      digitalWrite(kulibrie.DIREC_A, LOW);
      digitalWrite(kulibrie.DIREC_B, HIGH);
 
-     if (cycle_counter < 10) {
-       volt_A = min((int)(VI0/3.7*255), (int)(cycle_counter/10*(VI0/3.7*255)));
-       volt_B = min((int)(VI0/3.7*255), (int)(cycle_counter/10*(VI0/3.7*255)));
+     if (cycle_counter < 20) {
+       volt_A = min((int)(VI0/3.7*255), (int)(cycle_counter/20.0*(VI0/3.7*255)));
+       volt_B = min((int)(VI0/3.7*255), (int)(cycle_counter/20.0*(VI0/3.7*255)));
+  
      } else {
        volt_A = min((int)((VI0)/3.7*255), (int)255);
        volt_B = min((int)((VI0)/3.7*255), (int)255);
@@ -190,9 +195,9 @@ void set_voltage() {
      digitalWrite(kulibrie.DIREC_A, HIGH);
      digitalWrite(kulibrie.DIREC_B, LOW);
 
-     if (cycle_counter < 10) {
-       volt_A = min((int)(VI0/3.7*255), (int)(cycle_counter/10*(VI0/3.7*255)));
-       volt_B = min((int)(VI0/3.7*255), (int)(cycle_counter/10*(VI0/3.7*255)));
+     if (cycle_counter < 20) {
+       volt_A = min((int)(VI0/3.7*255), (int)(cycle_counter/20.0*(VI0/3.7*255)));
+       volt_B = min((int)(VI0/3.7*255), (int)(cycle_counter/20.0*(VI0/3.7*255)));
      } else {
        volt_A = min((int)((VI0)/3.7*255), (int)255);
        volt_B = min((int)((VI0)/3.7*255), (int)255);
