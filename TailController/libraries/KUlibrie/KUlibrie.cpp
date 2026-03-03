@@ -5,7 +5,7 @@ KUlibrie* KUlibrie::instance = nullptr;
 // -----------
 // Constructor
 // -----------
-KUlibrie::KUlibrie(float *u, float *w, float *q, float *pitch, 
+KUlibrie::KUlibrie(float *u, float *w, float *q, float *pitch, float *roll, float *yaw_rate,
                    float *VI0, float *servo_angle, 
                    float *ref_pitch)
     :   imu(I2C_MODE, 0x6A),
@@ -13,23 +13,19 @@ KUlibrie::KUlibrie(float *u, float *w, float *q, float *pitch,
         controlService("1102"), controlChar("2102"),
         actionService("1103"), actionChar("2103"),
         referenceService("1104"), referenceChar("2104"),
-        //filter(Q, R, f_acc, f_gyr, u, w, pitch_rate, pitch, &ax_filt, &az_filt, &gy_filt, 0, 0, 0)
-        filter(Q, R, f_acc, f_gyr, 
-            u, w, pitch_rate, pitch, 
-            &ax_filt, &az_filt, &gy_filt, 
-            0, 0, 0),        
+        AttitudeEstimator(Q, R, f_acc, f_gyr, &ax_filt, &ay_filt, &az_filt, &gx_filt, &gy_filt, &gz_filt, roll, pitch, yaw_rate),
+        VelocityEstimator(Q, R, f_acc, f_gyr, &ax_filt, &ay_filt, &az_filt, &gx_filt, &gy_filt, &gz_filt, roll, pitch, yaw_rate),
             file(InternalFS) {
             
             instance = this;
 
             _u = u; _w = w; _q = q; _pitch = pitch;
+            _roll = roll; _yaw_rate = yaw_rate;
+
             _VI0 = VI0; 
             _servo_angle = servo_angle;
-            _ref_pitch = ref_pitch;
 
-            // Set legacy pointers to null to avoid crashes
-            _roll = nullptr; _pitch_legacy = nullptr; _yaw_rate = nullptr;
-            _ref_roll = nullptr; _ref_yaw_rate = nullptr;
+            _ref_pitch = ref_pitch;
         }
 
 

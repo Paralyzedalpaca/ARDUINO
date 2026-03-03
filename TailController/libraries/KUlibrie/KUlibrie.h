@@ -105,11 +105,11 @@ class KUlibrie {
         bool send_control_data = false;     
         
         // Pin layout
-        const int SLP_PIN1 = 5;
+        const int SLP_PIN1 = 7;//5;
         const int SLP_PIN2 = 6;
-        const int DIREC_A = 3;
+        const int  DIREC_A = 10;//3;
         const int PWM_A = 0;
-        const int DIREC_B = 1;
+        const int DIREC_B = 9;//1;
         const int PWM_B = 2;
 
         const int TRIGGERPIN = 8;
@@ -166,14 +166,16 @@ class KUlibrie {
         // --- FILTER OBJECT --- Important it is after it!
         
         //LongitudinalEKF filter;
-        ExtendedKalman filter;  
+        ExtendedKalman AttitudeEstimator;  
+        uwEstimator VelocityEstimator;
 
         // Calibration Settings
         Matrix<5,2> calibration = {1, 1, 1, 1, 1, 0, 0, 0, 0, 0};   
         Matrix<3> gyro_biasses;                                     
 
-        // --- STATE POINTERS (New Longitudinal) ---
-        float *_u, *_w, *_pitch_rate, *_pitch;
+        // --- STATE POINTERS 
+        float *_u, *_w, *_pitch_rate
+        float *_pitch, *_roll, *_yaw_rate;
 
         // --- CONTROL INPUT POINTERS ---
         float *_VI0;          // Voltage Input
@@ -188,9 +190,7 @@ class KUlibrie {
         float ax_filt, ay_filt, az_filt;                            
         float gx_filt, gy_filt, gz_filt;                            
 
-        // --- LEGACY POINTERS (Kept to minimize changes, initialized to nullptr) ---
-        float *_roll, *_pitch_legacy, *_yaw_rate;                          
-        float *_ref_roll, *_ref_yaw_rate;              
+                
 
         int count_timesteps_telemetry = 0;                          
         int count_period_telemetry = 0;                             

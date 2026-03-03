@@ -115,11 +115,11 @@ class KUlibrie {
         bool send_control_data = false;     // Indicates if the KUlibrie should be sending controller data to the central computer
         
         // Pin layout
-        const int SLP_PIN1 = 5;
+        const int SLP_PIN1 = 7;//5;
         const int SLP_PIN2 = 6;
-        const int  DIREC_A = 3;
+        const int  DIREC_A = 10;//3;
         const int PWM_A = 0;
-        const int DIREC_B = 1;
+        const int DIREC_B = 9;//1;
         const int PWM_B = 2;
 
         const int TRIGGERPIN = 8;
