@@ -203,6 +203,7 @@ void set_voltage() {
        volt_B = min((int)((VI0)/3.7*255), (int)255);
      }
    }
+  
   analogWrite(kulibrie.PWM_A, volt_A);
   analogWrite(kulibrie.PWM_B, volt_B);
 }
