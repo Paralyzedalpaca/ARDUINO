@@ -1,49 +1,37 @@
 #ifndef uwEstimator_H
 #define uwEstimator_H
 
-// Import necessary packages
-#include <cmath>                // For goniometric calculations
-#include <filters.h>            // For low-pass filters
-#include <BasicLinearAlgebra.h> // For matrix operations
+#include <cmath>                
+#include <filters.h>            
+#include <BasicLinearAlgebra.h> 
 
 using namespace BLA;
 
 class uwEstimator {
     public:
-        // Constructors
         uwEstimator();
-        void init();
-        /**
-        * Updates the u and w velocity estimates using Forward Euler integration.
-        * @param ax    Specific force in body X-axis from accelerometer (m/s^2)
-        * @param az    Specific force in body Z-axis from accelerometer (m/s^2)
-        * @param pitch Pitch angle from Extended Kalman Filter (rad)
-        * @param roll   Roll angle from Extended Kalman Filter (rad)
-        * @param pitch_rate     Pitch rate from gyro (rad/s)
-        */        // Eventually predict step? Using model?
-        //void predict(float gx, float gy, float gz, float dt, bool calibrating);
-        // Update step using the accelerometer data
-        void update(float ax,float az, float pitch, float roll, float pitch_rate);
+        uwEstimator(float* u_ptr, float* w_ptr, float f_acc, float* pitch_ptr, float* roll_ptr);
+
+        // Public functions
+        void update(float raw_ax, float raw_az, float pitch_rate, float dt);
+        void set_calibration(Matrix<3,2> calibration);
+
+        // Public variables (for consistency with ExtendedKalman, though ExtendedKalman uses a bool parameter)
+        bool calibrating = false; // Indicates if the drone is flying or being calibrated
         
-        float getU() const { return u; }
-        float getW() const { return w; }
-        
-        void setU(float u_val) { u = u_val; }
-        void setW(float w_val) { w = w_val; }
-    
     private:
-        // Private variables
-        float *_ax_filt, *_az_filt;          // (Reference to) filtered accelerometer data
+        Filter ax_filter;                               
+        Filter az_filter;                               
 
-    
-        Filter ax_filter;                               // Instance of low-pass filter for accelerometer (in x-direction)
-        Filter az_filter;                               // Instance of low-pass filter for accelerometer (in z-direction)
+        // Internal pointers to the shared state
+        float* _u = nullptr;                               
+        float* _w = nullptr;                              
+        float* _pitch_ptr = nullptr;
+        float* _roll_ptr = nullptr;
 
-        float *_u = 0;                               // (Reference to) u estimation
-        float *_w = 0;                              // (Reference to) w estimation
+        const float g = 9.81f; 
 
-        float d2r = asin(1)/90;                         // Conversion from degrees to radians
-        float r2d = 90/asin(1);                         // Conversion from radians to degrees
+        Matrix<3,2> _calibration = {1, 0, 0, 0, 1, 0}; // Calibration settings {slope ax, bias ax, slope ay, bias ay, slope az, bias az}
 };
 
 #endif

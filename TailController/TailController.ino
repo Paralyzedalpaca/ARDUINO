@@ -12,10 +12,13 @@
 float u = 0;      // Forward velocity (m/s)
 float w = 0;      // Vertical velocity (m/s)
 float q = 0;      // Pitch rate (rad/s) from EKF
-float theta = 0;  // Pitch angle (rad) from EKF
+float pitch_rate = 0; // Pitch rate (rad/s) - will be updated by KUlibrie
+float pitch = 0;      // Pitch angle (rad) - will be updated by KUlibrie
+float roll = 0;       // Roll angle (rad) - will be updated by KUlibrie
+float yaw_rate = 0;   // Yaw rate (rad/s) - will be updated by KUlibrie
 
 // --- Controls ---
-float VI0 = 1;           // Main Voltage
+float VI0 = 0;           // Main Voltage
 float servo_angle_deg = 90; // Servo angle in degrees (Maintained by KUlibrie)
 float servo_angle_rad = 0;  // Helper for math
 
@@ -68,7 +71,7 @@ float start_controller = 18 * 1000.0;
 float end_controller = 42 * 1000.0;
 
 // References
-float pitch_reference = 0.0; // Voltage ref via BLE or Ramping
+float ref_pitch = 0.0; // Voltage ref via BLE or Ramping
 
 // Errors
 float pitch_error;
@@ -76,11 +79,10 @@ float pitch_error_i = 0;
 
 // --- Instantiation ---
 
-// KUlibrie Object (Longitudinal Setup)
-// Passing pointers to EKF states and relevant controls
-KUlibrie kulibrie(&u, &w, &q, &theta,
-                  &VI0, &servo_angle_deg,
-                  &pitch_reference);
+// KUlibrie Object 
+KUlibrie kulibrie(&u, &w, &pitch_rate, &pitch, &roll, &yaw_rate, 
+                   &VI0, &servo_angle_deg, 
+                   &ref_pitch);
 
 // --- Timing ---
 unsigned long time_old, time_new;
@@ -131,32 +133,32 @@ void loop() {
 
     // 3. Update Reference (Ramping)
     if (time_new - time_start <= start_ramp) {
-      // pitch_reference is used as a target ANGLE here, not voltage
-      // Note: The BLE reference overwrites 'pitch_reference'.
+      // ref_pitch is used as a target ANGLE here, not voltage
+      // Note: The BLE reference overwrites 'ref_pitch'.
       // If using ramp, ensure BLE isn't fighting it.
       // Assuming ramp logic takes precedence:
-      // pitch_reference = 0;
+      // ref_pitch = 0;
     }
-    else if (time_new - time_start > start_ramp && pitch_reference < end_pitch) {
-      // pitch_reference = (time_new - time_start - start_ramp) * ramp / 1000.0;
+    else if (time_new - time_start > start_ramp && ref_pitch < end_pitch) {
+      // ref_pitch = (time_new - time_start - start_ramp) * ramp / 1000.0;
     }
     else {
-      // pitch_reference = end_pitch;
+      // ref_pitch = end_pitch;
     }
     // Force zero for test if needed:
-    // pitch_reference = 0;
+    // ref_pitch = 0;
 
     // 4. Update Filter (Runs the EKF)
-    // This updates u, w, q, and theta based on IMU, VI0, and servo_angle
+    // This updates u, w, q, and pitch based on IMU, VI0, and servo_angle
     kulibrie.update_filter(dt);
     
     // 5. Calculate Errors
-    // Use 'theta' from EKF instead of old 'pitch'
-    pitch_error = theta - pitch_reference;
+    // Use 'pitch' from EKF instead of old 'pitch'
+    pitch_error = pitch - ref_pitch;
 
     // 6. Control Logic
-    control_filter.update(servo_angle_rad);
-    filtered_control = control_filter.get_filtered();
+    //control_filter.update(servo_angle_rad);
+    //filtered_control = control_filter.get_filtered();
 
     // 7. Actuation
     // Only actuate if within controller time window
@@ -170,13 +172,15 @@ void loop() {
     }
 
     // Debug
-    // Serial.println(servo_angle_deg);
-    Serial.print("Pitch angle: "); // Prints the text without a new line
-    Serial.println(theta);         // Prints the value of 'theta' and starts a new line
-    Serial.print(" u: "); // Prints the text without a new line
-    Serial.println(u);         // Prints the value of 'theta' and starts a new line
-    Serial.print(" servo angle "); 
-    Serial.println(servo_angle_deg);         
+    Serial.print("u: ");
+    Serial.print(u);
+    Serial.print(", w: ");
+    Serial.print(w);
+    Serial.print(", pitch: ");
+    Serial.print(pitch);
+    Serial.print(", roll: ");
+    Serial.println(roll);
+
 
   }
   else if (kulibrie.calibrate) {
@@ -212,10 +216,10 @@ void update_cycle() {
 // --------------------------------------------------------------
 void move_servo() {
   // Calculate Desired Angle
-  // Using 'theta' (Angle) and 'q' (Rate) from EKF directly
-  // Note: pitch_reference/ss_error term kept from your original code style
+  // Using 'pitch' (Angle) and 'q' (Rate) from EKF directly
+  // Note: ref_pitch/ss_error term kept from your original code style
 
-  float target_deg = (-Kp_p * theta + servo_bias - q * Kd_p - pitch_error_i * Ki_p) * rad_to_deg;
+  float target_deg = (-Kp_p * pitch + servo_bias - q * Kd_p - pitch_error_i * Ki_p) * rad_to_deg;
 
   // Saturation
   if (target_deg > (servo_max + servo_bias) * rad_to_deg) {

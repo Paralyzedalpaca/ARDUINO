@@ -5,7 +5,8 @@
 #include <bluefruit.h>              // For bluetooth communication
 #include <LSM6DS3.h>                // To read IMU sensor information
 #include <BasicLinearAlgebra.h>     // For matrix operations
-#include <LongitudinalEKF.h>        // REPLACED extendedKalmanFilter.h with your new EKF
+#include <extendedKalmanFilter.h> 
+#include <uwEstimator.h>
 #include <Adafruit_LittleFS.h>      // To save calibration information
 #include <InternalFileSystem.h>     // To save calibration information
 
@@ -56,15 +57,13 @@ union unionDataReference {
 using namespace Adafruit_LittleFS_Namespace;
 using namespace BLA; // Added this to ensure Matrix<> types are found
 
-#include "LongitudinalEKF.h"
-
 class KUlibrie {
     public:
         // Contructor
         // Outputs: u, w, q, theta
-        // Controls: VI0 (Voltage), servo_angle (Deg)
+        // Controls: VI0 (Voltage), servo_angle (Deg) 
         // Reference: ref_pitch (from BLE)
-        KUlibrie(float *u, float *w, float *pitch_rate, float *pitch, 
+        KUlibrie(float *u, float *w, float *pitch_rate, float *pitch, float *roll, float *yaw_rate,
                  float *VI0, float *servo_angle, 
                  float *ref_pitch);
 
@@ -153,35 +152,24 @@ class KUlibrie {
         float f_gyr = 40;                                           
 
         
-        // Matrices for the EKF
-        Matrix<4,4> Q = {1e-5, 0, 0, 0, 
-                         0, 1e-5, 0, 0, 
-                         0, 0, 1e-5, 0, 
-                         0, 0, 0, 1e-5}; 
-                              
-        Matrix<3,3> R = {1e-2, 0, 0, 
-                         0, 1e-2, 0, 
-                         0, 0, 1e-3};
-
-        // --- FILTER OBJECT --- Important it is after it!
         
-        //LongitudinalEKF filter;
-        ExtendedKalman AttitudeEstimator;  
-        uwEstimator VelocityEstimator;
+        Matrix<2,2> Q = {1e-5, 0, 0, 1e-5};                         // Q-matrix for Kalman filter
+        Matrix<3,3> R = {1e-2, 0, 0, 0, 2e-3, 0, 0, 0, 1e-3};       // R-matrix for Kalman filter
 
+    
         // Calibration Settings
         Matrix<5,2> calibration = {1, 1, 1, 1, 1, 0, 0, 0, 0, 0};   
         Matrix<3> gyro_biasses;                                     
 
         // --- STATE POINTERS 
-        float *_u, *_w, *_pitch_rate
-        float *_pitch, *_roll, *_yaw_rate;
+        float *_u, *_w, *_pitch_rate; // Forward velocity, vertical velocity, pitch rate 
+        float *_pitch, *_roll, *_yaw_rate; // Pitch angle, roll angle, yaw rate 
 
         // --- CONTROL INPUT POINTERS ---
         float *_VI0;          // Voltage Input
         float *_servo_angle;  // Tail Servo Angle (Degrees)
         float *_ref_pitch;    // Reference Pitch
-
+        
         // --- SENSOR DATA ---
         float ax, ay, az;     // Raw Accel                                      
         float gx, gy, gz;     // Raw Gyro                                      
@@ -190,6 +178,9 @@ class KUlibrie {
         float ax_filt, ay_filt, az_filt;                            
         float gx_filt, gy_filt, gz_filt;                            
 
+        // --- FILTER OBJECTS ---
+        ExtendedKalman AttitudeEstimator;  
+        uwEstimator VelocityEstimator;
                 
 
         int count_timesteps_telemetry = 0;                          

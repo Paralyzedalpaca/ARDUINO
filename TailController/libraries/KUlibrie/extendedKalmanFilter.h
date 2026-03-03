@@ -54,10 +54,10 @@ class ExtendedKalman {
         Filter gx_filter;                               // Instance of low-pass filter for gyroscope (in x-direction)
         Filter gy_filter;                               // Instance of low-pass filter for gyroscope (in y-direction)
         Filter gz_filter;                               // Instance of low-pass filter for gyroscope (in z-direction)
-
-        float *_roll = 0;                               // (Reference to) roll estimation
-        float *_pitch = 0;                              // (Reference to) pitch estimation
-        float *_yaw_rate = 0;                           // (Reference to) yaw rate estimation
+        
+        float *_roll = nullptr;                         // (Reference to) roll estimation
+        float *_pitch = nullptr;                        // (Reference to) pitch estimation
+        float *_yaw_rate = nullptr;                     // (Reference to) yaw rate estimation
 
         Matrix<2,2> Q;                                  // Q matrix for the Kalman filter
         Matrix<3,3> R;                                  // R matrix for the Kalman filter

@@ -5,7 +5,8 @@ KUlibrie* KUlibrie::instance = nullptr;
 // -----------
 // Constructor
 // -----------
-KUlibrie::KUlibrie(float *u, float *w, float *q, float *pitch, float *roll, float *yaw_rate,
+// Debug: KUlibrie constructor called
+KUlibrie::KUlibrie(float *u, float *w, float *pitch_rate, float *pitch, float *roll, float *yaw_rate,
                    float *VI0, float *servo_angle, 
                    float *ref_pitch)
     :   imu(I2C_MODE, 0x6A),
@@ -14,18 +15,23 @@ KUlibrie::KUlibrie(float *u, float *w, float *q, float *pitch, float *roll, floa
         actionService("1103"), actionChar("2103"),
         referenceService("1104"), referenceChar("2104"),
         AttitudeEstimator(Q, R, f_acc, f_gyr, &ax_filt, &ay_filt, &az_filt, &gx_filt, &gy_filt, &gz_filt, roll, pitch, yaw_rate),
-        VelocityEstimator(Q, R, f_acc, f_gyr, &ax_filt, &ay_filt, &az_filt, &gx_filt, &gy_filt, &gz_filt, roll, pitch, yaw_rate),
+        VelocityEstimator(_u, _w, f_acc, _pitch, _roll), // Pass u, w, f_acc, pitch, roll pointers
             file(InternalFS) {
-            
-            instance = this;
 
-            _u = u; _w = w; _q = q; _pitch = pitch;
+            instance = this; // Set the static instance pointer
+
+            _u = u; _w = w; _pitch_rate = pitch_rate; _pitch = pitch;
             _roll = roll; _yaw_rate = yaw_rate;
 
             _VI0 = VI0; 
             _servo_angle = servo_angle;
 
             _ref_pitch = ref_pitch;
+
+            Serial.println("KUlibrie constructor called.");
+            Serial.print("u_ptr: "); Serial.println((uintptr_t)_u, HEX);
+            Serial.print("w_ptr: "); Serial.println((uintptr_t)_w, HEX);
+            Serial.print("pitch_ptr: "); Serial.println((uintptr_t)_pitch, HEX);
         }
 
 
@@ -134,7 +140,7 @@ void KUlibrie::setup_hardware() {
         calibration(2, 1) = calibrationData.value[5];
         
         // Set the calibration settings
-        filter.set_calibration(calibration, gyro_biasses);
+        AttitudeEstimator.set_calibration(calibration, gyro_biasses);
 
         Serial.println("Calibration data:");
         Serial.print(calibration(0, 0), 4);
@@ -278,24 +284,36 @@ void KUlibrie::staticReference(uint16_t conn_handle, BLECharacteristic* chr, uin
 // Function that updates the attitude estimation
 // ---------------------------------------------
 void KUlibrie::update_filter(float dt) {
+    // Debug: update_filter called
+    Serial.print("KUlibrie::update_filter called. dt: "); Serial.println(dt, 6);
+
+
     // 1. Read Raw Sensors
     ax = imu.readFloatAccelX();
     ay = imu.readFloatAccelY();
     az = imu.readFloatAccelZ();
 
     gx = imu.readFloatGyroX();
-    gy = imu.readFloatGyroY(); // Pitch Rate
     gz = imu.readFloatGyroZ();
+    // Debug: Raw sensor readings
+    Serial.print("Raw Accel (ax, ay, az): "); Serial.print(ax, 4); Serial.print(", "); Serial.print(ay, 4); Serial.print(", "); Serial.println(az, 4);
+    Serial.print("Raw Gyro (gx, gy, gz): "); Serial.print(gx, 4); Serial.print(", "); Serial.print(gy, 4); Serial.print(", "); Serial.println(gz, 4);
 
     // 2. Predict Step (Model)
     // Uses Voltage (*_VI0) and Servo Angle (*_servo_angle converted to radians)
-    float servo_rad = (*_servo_angle) * d2r;
-    filter.predict(*_VI0, servo_rad, dt);
+    // The ExtendedKalman predict method expects raw gyro values, not control inputs.
+    AttitudeEstimator.predict(gx, gy, gz, dt, calibrate);
+    // Debug: AttitudeEstimator predict done
 
     // 3. Update Step (Correction)
     // Uses Ax, Az, and Gy (Pitch Rate)
     // 'calibrate' flag tells the filter if it should just collect data or filter it
-    filter.update(ax, az, gy, calibrate);
+    AttitudeEstimator.update(ax, ay, az, calibrate);
+    // Debug: AttitudeEstimator update done
+
+    // 4. Update Velocity Estimator
+    // Uses raw Ax, Az, and the estimated Pitch Rate from AttitudeEstimator
+    VelocityEstimator.update(ax, az, AttitudeEstimator.get_gyro_filt()(1), dt);
 }
 // ---------------------------------------------------------
 // Function that fits a linear regression through given data
@@ -350,8 +368,11 @@ void KUlibrie::set_calibration() {
     Kalman filter instance and writes it to the calibration file on the memory
     */
     
-    filter.set_calibration(calibration, gyro_biasses);
-
+    AttitudeEstimator.set_calibration(calibration, gyro_biasses);
+    // 'filter' is not declared, assuming it should be AttitudeEstimator
+    AttitudeEstimator.set_calibration(calibration, gyro_biasses);
+    // Also set calibration for the VelocityEstimator
+    VelocityEstimator.set_calibration(calibration.Submatrix<3,2>(0,0)); // Pass only the relevant part for accel
     write_calibration();
 }
 
@@ -424,7 +445,7 @@ void KUlibrie::send_telemetry(unsigned long t) {
         telemetryData.value[16*count_period_telemetry + 11] = gz_filt*r2d;
         
         telemetryData.value[16*count_period_telemetry + 12] = *_u;
-        telemetryData.value[16*count_period_telemetry + 13] = *_theta * r2d; // Convert to degrees
+        telemetryData.value[16*count_period_telemetry + 13] = *_pitch * r2d; // Convert to degrees
         telemetryData.value[16*count_period_telemetry + 14] = *_w;
         
         telemetryData.value[16*count_period_telemetry + 15] = (float)(t - start_control)/1000;
